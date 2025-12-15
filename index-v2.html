@@ -267,7 +267,7 @@
 </head>
 <body>
     <h1>🎵 MP3 Edit 2000</h1>
-    <p class="subtitle">Edit MP3 metadata and album art on your mobile device</p>
+    <p class="subtitle">Edit MP3 metadata and album art on your mobile device (v2 - Alternative Implementation)</p>
 
     <div class="container">
         <div class="section-title">📂 Load MP3 File</div>
@@ -347,11 +347,8 @@
 
     <div id="statusMessage" class="status-message"></div>
 
-    <!-- Music Metadata Browser library for reading MP3 metadata -->
     <script type="module">
-        // Import music-metadata-browser for reading and browser-id3-writer for writing
-        import * as mm from 'https://cdn.jsdelivr.net/npm/music-metadata-browser@2.5.11/+esm';
-        import ID3Writer from 'https://cdn.jsdelivr.net/npm/browser-id3-writer@6.3.1/+esm';
+        // Using id3-parser and a custom ID3 writer for a pure JavaScript solution
         
         // IndexedDB setup
         let db;
@@ -445,6 +442,371 @@
             }, 5000);
         }
 
+        // Pure JavaScript ID3v2 parser
+        function parseID3v2(buffer) {
+            const view = new DataView(buffer);
+            const metadata = {};
+            
+            try {
+                // Check for ID3v2 header
+                const id3 = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2));
+                if (id3 !== 'ID3') {
+                    console.log('No ID3v2 tag found');
+                    return metadata;
+                }
+
+                const version = view.getUint8(3);
+                const flags = view.getUint8(5);
+                
+                // Parse tag size (synchsafe integer)
+                const tagSize = (view.getUint8(6) << 21) | (view.getUint8(7) << 14) | 
+                               (view.getUint8(8) << 7) | view.getUint8(9);
+
+                console.log(`ID3v2.${version} tag found, size: ${tagSize} bytes`);
+
+                let offset = 10;
+                const tagEnd = 10 + tagSize;
+
+                // Parse frames
+                while (offset < tagEnd - 10) {
+                    // Frame ID (4 bytes)
+                    const frameId = String.fromCharCode(
+                        view.getUint8(offset), view.getUint8(offset + 1),
+                        view.getUint8(offset + 2), view.getUint8(offset + 3)
+                    );
+                    
+                    if (frameId === '\0\0\0\0' || frameId[0] === '\0') break;
+
+                    // Frame size (4 bytes)
+                    let frameSize;
+                    if (version === 4) {
+                        // ID3v2.4 uses synchsafe integers
+                        frameSize = (view.getUint8(offset + 4) << 21) | (view.getUint8(offset + 5) << 14) |
+                                   (view.getUint8(offset + 6) << 7) | view.getUint8(offset + 7);
+                    } else {
+                        // ID3v2.3 uses regular integers
+                        frameSize = (view.getUint8(offset + 4) << 24) | (view.getUint8(offset + 5) << 16) |
+                                   (view.getUint8(offset + 6) << 8) | view.getUint8(offset + 7);
+                    }
+
+                    // Frame flags (2 bytes)
+                    const frameFlags = view.getUint16(offset + 8);
+
+                    if (frameSize === 0 || frameSize > tagSize) break;
+
+                    const frameDataOffset = offset + 10;
+                    
+                    // Parse text frames
+                    if (frameId[0] === 'T' && frameId !== 'TXXX') {
+                        const encoding = view.getUint8(frameDataOffset);
+                        const textData = new Uint8Array(buffer, frameDataOffset + 1, frameSize - 1);
+                        
+                        let text = '';
+                        if (encoding === 0 || encoding === 3) {
+                            // ISO-8859-1 or UTF-8
+                            text = new TextDecoder('utf-8').decode(textData);
+                        } else if (encoding === 1 || encoding === 2) {
+                            // UTF-16 with BOM
+                            text = new TextDecoder('utf-16').decode(textData);
+                        }
+                        
+                        // Remove null terminators
+                        text = text.replace(/\0/g, '').trim();
+                        metadata[frameId] = text;
+                    }
+                    
+                    // Parse APIC (album art) frame
+                    if (frameId === 'APIC') {
+                        try {
+                            const encoding = view.getUint8(frameDataOffset);
+                            let pos = frameDataOffset + 1;
+                            
+                            // Read MIME type
+                            let mimeType = '';
+                            while (pos < frameDataOffset + frameSize && view.getUint8(pos) !== 0) {
+                                mimeType += String.fromCharCode(view.getUint8(pos));
+                                pos++;
+                            }
+                            pos++; // Skip null terminator
+                            
+                            const pictureType = view.getUint8(pos);
+                            pos++;
+                            
+                            // Skip description
+                            while (pos < frameDataOffset + frameSize && view.getUint8(pos) !== 0) {
+                                pos++;
+                            }
+                            pos++; // Skip null terminator
+                            
+                            // Extract image data
+                            const imageDataLength = frameSize - (pos - frameDataOffset);
+                            const imageData = new Uint8Array(buffer, pos, imageDataLength);
+                            
+                            metadata.APIC = {
+                                mimeType,
+                                pictureType,
+                                data: imageData
+                            };
+                        } catch (err) {
+                            console.error('Error parsing APIC frame:', err);
+                        }
+                    }
+                    
+                    // Parse COMM (comment) frame
+                    if (frameId === 'COMM') {
+                        try {
+                            const encoding = view.getUint8(frameDataOffset);
+                            const language = String.fromCharCode(
+                                view.getUint8(frameDataOffset + 1),
+                                view.getUint8(frameDataOffset + 2),
+                                view.getUint8(frameDataOffset + 3)
+                            );
+                            
+                            // Skip short description and get comment text
+                            let pos = frameDataOffset + 4;
+                            while (pos < frameDataOffset + frameSize && view.getUint8(pos) !== 0) {
+                                pos++;
+                            }
+                            pos++;
+                            
+                            const commentData = new Uint8Array(buffer, pos, frameSize - (pos - frameDataOffset));
+                            let text = new TextDecoder('utf-8').decode(commentData).replace(/\0/g, '').trim();
+                            metadata[frameId] = text;
+                        } catch (err) {
+                            console.error('Error parsing COMM frame:', err);
+                        }
+                    }
+
+                    offset += 10 + frameSize;
+                }
+            } catch (error) {
+                console.error('Error parsing ID3v2 tag:', error);
+            }
+
+            return metadata;
+        }
+
+        // Read MP3 metadata
+        async function readMP3Metadata(file) {
+            try {
+                currentMP3Buffer = await file.arrayBuffer();
+                const metadata = parseID3v2(currentMP3Buffer);
+                
+                console.log('Parsed metadata:', metadata);
+
+                // Map ID3v2 frame IDs to form fields
+                document.getElementById('title').value = metadata.TIT2 || '';
+                document.getElementById('artist').value = metadata.TPE1 || '';
+                document.getElementById('album').value = metadata.TALB || '';
+                document.getElementById('year').value = metadata.TYER || metadata.TDRC || '';
+                document.getElementById('genre').value = metadata.TCON || '';
+                document.getElementById('comment').value = metadata.COMM || '';
+                document.getElementById('track').value = metadata.TRCK || '';
+
+                // Display album art
+                if (metadata.APIC) {
+                    const blob = new Blob([metadata.APIC.data], { type: metadata.APIC.mimeType });
+                    const url = URL.createObjectURL(blob);
+                    imagePreview.innerHTML = `<img src="${url}" alt="Album Art">`;
+                    
+                    currentImageData = {
+                        data: Array.from(metadata.APIC.data),
+                        format: metadata.APIC.mimeType
+                    };
+                } else {
+                    imagePreview.innerHTML = '';
+                    currentImageData = null;
+                }
+
+                return metadata;
+            } catch (error) {
+                console.error('Error reading metadata:', error);
+                showStatus('Error reading metadata: ' + error.message, 'error');
+                return {};
+            }
+        }
+
+        // Create ID3v2.3 tag
+        function createID3v23Tag(metadata, imageData) {
+            const frames = [];
+            
+            // Helper function to create text frame
+            function createTextFrame(id, text) {
+                if (!text) return null;
+                
+                const textBytes = new TextEncoder().encode(text);
+                const frame = new Uint8Array(10 + 1 + textBytes.length);
+                
+                // Frame ID
+                for (let i = 0; i < 4; i++) {
+                    frame[i] = id.charCodeAt(i);
+                }
+                
+                // Frame size (excluding header)
+                const size = 1 + textBytes.length;
+                frame[4] = (size >> 24) & 0xFF;
+                frame[5] = (size >> 16) & 0xFF;
+                frame[6] = (size >> 8) & 0xFF;
+                frame[7] = size & 0xFF;
+                
+                // Flags
+                frame[8] = 0;
+                frame[9] = 0;
+                
+                // Encoding (0 = ISO-8859-1)
+                frame[10] = 0;
+                
+                // Text data
+                frame.set(textBytes, 11);
+                
+                return frame;
+            }
+            
+            // Create text frames
+            if (metadata.title) frames.push(createTextFrame('TIT2', metadata.title));
+            if (metadata.artist) frames.push(createTextFrame('TPE1', metadata.artist));
+            if (metadata.album) frames.push(createTextFrame('TALB', metadata.album));
+            if (metadata.year) frames.push(createTextFrame('TYER', metadata.year));
+            if (metadata.genre) frames.push(createTextFrame('TCON', metadata.genre));
+            if (metadata.track) frames.push(createTextFrame('TRCK', metadata.track));
+            
+            // Create COMM frame for comment
+            if (metadata.comment) {
+                const commentBytes = new TextEncoder().encode(metadata.comment);
+                const commFrame = new Uint8Array(10 + 1 + 3 + 1 + commentBytes.length);
+                
+                // Frame ID
+                for (let i = 0; i < 4; i++) {
+                    commFrame[i] = 'COMM'.charCodeAt(i);
+                }
+                
+                // Frame size
+                const size = 1 + 3 + 1 + commentBytes.length;
+                commFrame[4] = (size >> 24) & 0xFF;
+                commFrame[5] = (size >> 16) & 0xFF;
+                commFrame[6] = (size >> 8) & 0xFF;
+                commFrame[7] = size & 0xFF;
+                
+                // Flags
+                commFrame[8] = 0;
+                commFrame[9] = 0;
+                
+                // Encoding
+                commFrame[10] = 0;
+                
+                // Language
+                commFrame[11] = 'e'.charCodeAt(0);
+                commFrame[12] = 'n'.charCodeAt(0);
+                commFrame[13] = 'g'.charCodeAt(0);
+                
+                // Short description (empty)
+                commFrame[14] = 0;
+                
+                // Comment text
+                commFrame.set(commentBytes, 15);
+                
+                frames.push(commFrame);
+            }
+            
+            // Create APIC frame for album art
+            if (imageData && imageData.data && imageData.data.length > 0) {
+                const mimeType = imageData.format || 'image/jpeg';
+                const mimeBytes = new TextEncoder().encode(mimeType);
+                const description = new TextEncoder().encode('');
+                const imageBytes = new Uint8Array(imageData.data);
+                
+                const apicFrame = new Uint8Array(10 + 1 + mimeBytes.length + 1 + 1 + description.length + 1 + imageBytes.length);
+                
+                // Frame ID
+                for (let i = 0; i < 4; i++) {
+                    apicFrame[i] = 'APIC'.charCodeAt(i);
+                }
+                
+                // Frame size
+                const size = 1 + mimeBytes.length + 1 + 1 + description.length + 1 + imageBytes.length;
+                apicFrame[4] = (size >> 24) & 0xFF;
+                apicFrame[5] = (size >> 16) & 0xFF;
+                apicFrame[6] = (size >> 8) & 0xFF;
+                apicFrame[7] = size & 0xFF;
+                
+                // Flags
+                apicFrame[8] = 0;
+                apicFrame[9] = 0;
+                
+                let pos = 10;
+                
+                // Encoding
+                apicFrame[pos++] = 0;
+                
+                // MIME type
+                apicFrame.set(mimeBytes, pos);
+                pos += mimeBytes.length;
+                apicFrame[pos++] = 0; // Null terminator
+                
+                // Picture type (3 = Cover front)
+                apicFrame[pos++] = 3;
+                
+                // Description
+                apicFrame.set(description, pos);
+                pos += description.length;
+                apicFrame[pos++] = 0; // Null terminator
+                
+                // Image data
+                apicFrame.set(imageBytes, pos);
+                
+                frames.push(apicFrame);
+            }
+            
+            // Calculate total frames size
+            const framesSize = frames.reduce((sum, frame) => sum + frame.length, 0);
+            
+            // Create ID3v2 header
+            const header = new Uint8Array(10);
+            header[0] = 'I'.charCodeAt(0);
+            header[1] = 'D'.charCodeAt(0);
+            header[2] = '3'.charCodeAt(0);
+            header[3] = 3; // Version 2.3
+            header[4] = 0; // Revision
+            header[5] = 0; // Flags
+            
+            // Tag size (synchsafe integer)
+            header[6] = (framesSize >> 21) & 0x7F;
+            header[7] = (framesSize >> 14) & 0x7F;
+            header[8] = (framesSize >> 7) & 0x7F;
+            header[9] = framesSize & 0x7F;
+            
+            // Combine header and frames
+            const tag = new Uint8Array(10 + framesSize);
+            tag.set(header, 0);
+            let offset = 10;
+            for (const frame of frames) {
+                if (frame) {
+                    tag.set(frame, offset);
+                    offset += frame.length;
+                }
+            }
+            
+            return tag;
+        }
+
+        // Remove existing ID3v2 tag from MP3
+        function removeID3v2Tag(buffer) {
+            const view = new DataView(buffer);
+            
+            // Check for ID3v2 header
+            const id3 = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2));
+            if (id3 !== 'ID3') {
+                return buffer; // No ID3v2 tag to remove
+            }
+            
+            // Parse tag size
+            const tagSize = (view.getUint8(6) << 21) | (view.getUint8(7) << 14) | 
+                           (view.getUint8(8) << 7) | view.getUint8(9);
+            
+            // Return buffer without ID3 tag
+            return buffer.slice(10 + tagSize);
+        }
+
         // MP3 file selection
         mp3Input.addEventListener('change', async (e) => {
             const file = e.target.files[0];
@@ -463,56 +825,9 @@
                 showStatus('MP3 file loaded successfully!', 'success');
             } catch (error) {
                 console.error('Error reading MP3:', error);
-                showStatus('Error reading MP3 file', 'error');
+                showStatus('Error reading MP3 file: ' + error.message, 'error');
             }
         });
-
-        // Read MP3 metadata using music-metadata-browser
-        async function readMP3Metadata(file) {
-            try {
-                // Read file as array buffer for later use
-                currentMP3Buffer = await file.arrayBuffer();
-
-                // Parse metadata using music-metadata-browser
-                const metadata = await mm.parseBlob(file);
-                console.log('Parsed metadata:', metadata);
-
-                const common = metadata.common;
-                
-                // Populate form fields
-                document.getElementById('title').value = common.title || '';
-                document.getElementById('artist').value = common.artist || '';
-                document.getElementById('album').value = common.album || '';
-                document.getElementById('year').value = common.year || '';
-                document.getElementById('genre').value = common.genre?.[0] || '';
-                document.getElementById('comment').value = common.comment?.[0] || '';
-                document.getElementById('track').value = common.track?.no || '';
-
-                // Display existing album art if present
-                if (common.picture && common.picture.length > 0) {
-                    const picture = common.picture[0];
-                    const blob = new Blob([picture.data], { type: picture.format });
-                    const url = URL.createObjectURL(blob);
-                    imagePreview.innerHTML = `<img src="${url}" alt="Album Art">`;
-                    
-                    // Store current image data
-                    currentImageData = {
-                        data: Array.from(picture.data),
-                        format: picture.format
-                    };
-                } else {
-                    imagePreview.innerHTML = '';
-                    currentImageData = null;
-                }
-
-                return metadata;
-            } catch (error) {
-                console.error('Error reading metadata:', error);
-                showStatus('Could not read metadata: ' + error.message, 'error');
-                // Even if metadata reading fails, we can still edit
-                return {};
-            }
-        }
 
         // Image selection
         imageInput.addEventListener('change', (e) => {
@@ -547,59 +862,37 @@
             try {
                 showStatus('Saving MP3 file...', 'info');
 
-                // Create a new ID3Writer instance
-                const writer = new ID3Writer(currentMP3Buffer);
-                writer.padding = 4096; // Add padding for future edits
-                
-                // Set text frames
-                const title = document.getElementById('title').value.trim();
-                const artist = document.getElementById('artist').value.trim();
-                const album = document.getElementById('album').value.trim();
-                const year = document.getElementById('year').value.trim();
-                const genre = document.getElementById('genre').value.trim();
-                const comment = document.getElementById('comment').value.trim();
-                const track = document.getElementById('track').value.trim();
+                // Get metadata from form
+                const metadata = {
+                    title: document.getElementById('title').value.trim(),
+                    artist: document.getElementById('artist').value.trim(),
+                    album: document.getElementById('album').value.trim(),
+                    year: document.getElementById('year').value.trim(),
+                    genre: document.getElementById('genre').value.trim(),
+                    comment: document.getElementById('comment').value.trim(),
+                    track: document.getElementById('track').value.trim()
+                };
 
-                if (title) writer.setFrame('TIT2', title);
-                if (artist) writer.setFrame('TPE1', [artist]);
-                if (album) writer.setFrame('TALB', album);
-                if (year) writer.setFrame('TYER', year);
-                if (genre) writer.setFrame('TCON', [genre]);
-                if (comment) writer.setFrame('COMM', {
-                    description: '',
-                    text: comment,
-                    language: 'eng'
-                });
-                if (track) writer.setFrame('TRCK', track);
-
-                // Set album art if available
-                if (currentImageData) {
-                    const imageType = currentImageData.format.includes('png') ? 'image/png' : 'image/jpeg';
-                    writer.setFrame('APIC', {
-                        type: 3, // Front cover
-                        data: new Uint8Array(currentImageData.data),
-                        description: 'Cover',
-                        useUnicodeEncoding: false
-                    });
-                }
-
-                writer.addTag();
-                const taggedBuffer = writer.arrayBuffer;
-                const blob = new Blob([taggedBuffer], { type: 'audio/mpeg' });
+                // Remove existing ID3 tag
+                const audioData = removeID3v2Tag(currentMP3Buffer);
                 
-                // Create filename with _edited suffix
-                const originalName = currentMP3File.name.replace(/\.mp3$/i, '');
-                const newFilename = `${originalName}_edited.mp3`;
+                // Create new ID3 tag
+                const id3Tag = createID3v23Tag(metadata, currentImageData);
                 
-                // Download the file
+                // Combine ID3 tag with audio data
+                const newBuffer = new Uint8Array(id3Tag.length + audioData.byteLength);
+                newBuffer.set(id3Tag, 0);
+                newBuffer.set(new Uint8Array(audioData), id3Tag.length);
+                
+                // Create blob and download
+                const blob = new Blob([newBuffer], { type: 'audio/mpeg' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = newFilename;
+                a.download = currentMP3File.name.replace(/\.mp3$/i, '_edited.mp3');
                 document.body.appendChild(a);
                 a.click();
                 
-                // Cleanup
                 setTimeout(() => {
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
@@ -715,7 +1008,7 @@
             try {
                 await initDB();
                 await displayTemplates();
-                console.log('MP3 Edit 2000 initialized successfully');
+                console.log('MP3 Edit 2000 v2 initialized successfully (Pure JS Implementation)');
             } catch (error) {
                 console.error('Error initializing app:', error);
                 showStatus('Error initializing database', 'error');

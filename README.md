@@ -6,6 +6,14 @@ A modern, mobile-friendly web application for editing MP3 metadata and album art
 
 **[Try it now on GitHub Pages!](https://echooff3.github.io/mp3-edit-2000/)**
 
+## 📦 Available Versions
+
+### Main Version (index.html)
+Uses **music-metadata-browser** for reading and **browser-id3-writer** for writing MP3 metadata. This is the recommended version with modern ES modules.
+
+### Alternative Version (index-v2.html)
+A **pure JavaScript implementation** with custom ID3v2 parser and writer. No external dependencies for metadata processing. Use this if you experience issues with CDN-hosted libraries.
+
 ## ✨ Features
 
 ### 📱 Mobile-First Design
@@ -43,11 +51,18 @@ A modern, mobile-friendly web application for editing MP3 metadata and album art
 
 ## 🚀 Technology Stack
 
+### Main Version (index.html)
 - **Pure HTML5, CSS3, and JavaScript** - No build process required
-- **[jsmediatags](https://github.com/aadsm/jsmediatags)** - Reading MP3 metadata
+- **[music-metadata-browser](https://github.com/Borewit/music-metadata-browser)** - Modern library for reading MP3 metadata
 - **[browser-id3-writer](https://github.com/egoroof/browser-id3-writer)** - Writing MP3 metadata
 - **IndexedDB** - Local storage for templates
 - **GitHub Pages** - Static hosting
+
+### Alternative Version (index-v2.html)
+- **Pure JavaScript** - Custom ID3v2.3 parser and writer
+- **No external dependencies** for MP3 processing
+- **IndexedDB** - Local storage for templates
+- **Fully offline-capable** - Works without CDN access
 
 ## 💻 Usage
 
