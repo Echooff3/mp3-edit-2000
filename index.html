@@ -567,7 +567,7 @@
                 if (title) writer.setFrame('TIT2', title);
                 if (artist) writer.setFrame('TPE1', [artist]);
                 if (album) writer.setFrame('TALB', album);
-                if (year) writer.setFrame('TYER', parseInt(year));
+                if (year) writer.setFrame('TDRC', year); // Use TDRC instead of deprecated TYER
                 if (genre) writer.setFrame('TCON', [genre]);
                 if (comment) writer.setFrame('COMM', {
                     description: '',
