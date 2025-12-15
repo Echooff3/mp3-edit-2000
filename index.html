@@ -350,10 +350,10 @@
     <!-- jsmediatags library for reading MP3 metadata -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     
-    <!-- Browser ID3 Writer for writing MP3 metadata -->
-    <script src="https://cdn.jsdelivr.net/npm/browser-id3-writer@6.1.0/dist/browser-id3-writer.min.js"></script>
-
-    <script>
+    <script type="module">
+        // Import browser-id3-writer as ES module
+        import ID3Writer from 'https://cdn.jsdelivr.net/npm/browser-id3-writer@6.3.1/+esm';
+        
         // IndexedDB setup
         let db;
         const DB_NAME = 'MP3EditorDB';
