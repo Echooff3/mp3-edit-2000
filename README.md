@@ -9,10 +9,10 @@ A modern, mobile-friendly web application for editing MP3 metadata and album art
 ## 📦 Available Versions
 
 ### Main Version (index.html)
-Uses **music-metadata-browser** for reading and **browser-id3-writer** for writing MP3 metadata. This is the recommended version with modern ES modules.
+Uses a **pure JavaScript implementation** with custom ID3v2 parser and writer. No external dependencies for metadata processing - fully offline-capable and reliable.
 
-### Alternative Version (index-v2.html)
-A **pure JavaScript implementation** with custom ID3v2 parser and writer. No external dependencies for metadata processing. Use this if you experience issues with CDN-hosted libraries.
+### Alternative Version (index-v2.html)  
+Same as the main version - backup copy of the working implementation.
 
 ## ✨ Features
 
@@ -51,18 +51,12 @@ A **pure JavaScript implementation** with custom ID3v2 parser and writer. No ext
 
 ## 🚀 Technology Stack
 
-### Main Version (index.html)
+- **Pure JavaScript** - Custom ID3v2.3 parser and writer built from scratch
+- **No external dependencies** for MP3 processing - fully self-contained
 - **Pure HTML5, CSS3, and JavaScript** - No build process required
-- **[music-metadata-browser](https://github.com/Borewit/music-metadata-browser)** - Modern library for reading MP3 metadata
-- **[browser-id3-writer](https://github.com/egoroof/browser-id3-writer)** - Writing MP3 metadata
 - **IndexedDB** - Local storage for templates
+- **Fully offline-capable** - Works without internet access
 - **GitHub Pages** - Static hosting
-
-### Alternative Version (index-v2.html)
-- **Pure JavaScript** - Custom ID3v2.3 parser and writer
-- **No external dependencies** for MP3 processing
-- **IndexedDB** - Local storage for templates
-- **Fully offline-capable** - Works without CDN access
 
 ## 💻 Usage
 
